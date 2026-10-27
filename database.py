@@ -19,6 +19,16 @@ def init_db():
     ''')
     c.execute('CREATE TABLE IF NOT EXISTS system_config (config_key TEXT PRIMARY KEY, config_value TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT, daily_limit INTEGER DEFAULT 2)')
+    
+    # FIXED: Added persistent tracker table so clearing chat logs doesn't reset limits
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS daily_usage (
+            username TEXT,
+            date_str TEXT,
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY (username, date_str)
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -35,7 +45,7 @@ def load_and_decrypt_key_from_db():
     c.execute("SELECT config_value FROM system_config WHERE config_key = 'OPENROUTER_API_KEY'")
     row = c.fetchone()
     conn.close()
-    return decrypt_key(row[0]) if row else None
+    return decrypt_key(row) if row else None
 
 def register_user(username, password, admin_username="admin"):
     conn = sqlite3.connect(DB_NAME)
@@ -56,7 +66,7 @@ def verify_user(username, password):
     c.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
-    if row and row[0] == hash_password(password):
+    if row and row == hash_password(password):
         return True
     return False
 
@@ -81,13 +91,24 @@ def get_user_daily_limit(username):
     c.execute("SELECT daily_limit FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
-    return row[0] if row else 2
+    return row if row else 2
 
 def save_message_to_db(username, role, content):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("INSERT INTO messages (username, timestamp, role, content) VALUES (?, ?, ?, ?)", (username, timestamp, role, content))
+    
+    # FIXED: Increment usage tracker when a user asks a question
+    if role == 'user':
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        c.execute('''
+            INSERT INTO daily_usage (username, date_str, count) 
+            VALUES (?, ?, 1)
+            ON CONFLICT(username, date_str) 
+            DO UPDATE SET count = count + 1
+        ''', (username, today_str))
+        
     conn.commit()
     conn.close()
 
@@ -97,11 +118,12 @@ def load_chat_history(username):
     c.execute("SELECT role, content FROM messages WHERE username = ? ORDER BY id ASC", (username,))
     rows = c.fetchall()
     conn.close()
-    return [{"role": r[0], "content": r[1]} for r in rows]
+    return [{"role": r, "content": r} for r in rows]
 
 def clear_user_db(username):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+    # Safely clears UI history records only—does NOT alter the daily_usage limits ledger
     c.execute("DELETE FROM messages WHERE username = ?", (username,))
     conn.commit()
     conn.close()
@@ -109,9 +131,8 @@ def clear_user_db(username):
 def get_today_query_count(username):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    today_str = datetime.now().strftime("%Y-%m-%d") + "%"
-    c.execute("SELECT COUNT(*) FROM messages WHERE username = ? AND role = 'user' AND timestamp LIKE ?", (username, today_str))
-    count = c.fetchone()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    c.execute("SELECT count FROM daily_usage WHERE username = ? AND date_str = ?", (username, today_str))
+    row = c.fetchone()
     conn.close()
-    return count[0] if count else 0
-
+    return row if row else 0
