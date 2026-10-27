@@ -18,7 +18,7 @@ ADMIN_USERNAME = "admin"
 if "ENCRYPTION_KEY" in st.secrets:
     SECRET_CIPHER_KEY = st.secrets["ENCRYPTION_KEY"].encode()
 else:
-    SECRET_CIPHER_KEY = b'6l7V3Xz9P_K4R2N1M0_bA8d3E5f7G9h1I3j5K7l9M1=' 
+    SECRET_CIPHER_KEY = "fYQTQuX1qtXmFnuLijf_xJq2sZugEJUUKlMiv8kQ8BM="
 fernet_cipher = Fernet(SECRET_CIPHER_KEY)
 
 def encrypt_key(plain_text: str) -> str:
