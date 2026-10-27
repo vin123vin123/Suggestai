@@ -77,7 +77,18 @@ with st.sidebar:
         del st.session_state.authenticated_user
         st.rerun()
     st.divider()
-    model_choice = st.selectbox("Route Selection", options=["openrouter/free", "google/gemini-2.5-flash:free"])
+        # FIXED: Replaced non-existent free models to bypass the 404 block
+    model_choice = st.selectbox(
+        "Route Selection", 
+        options=[
+            "google/gemini-2.5-flash:free",
+            "google/gemini-2.5-pro:free",
+            "qwen/qwen-2.5-72b-instruct:free",
+            "deepseek/deepseek-chat:free"
+        ],
+        index=0
+    )
+
     if st.button("🗑️ Clear My Chat History", type="primary"):
         clear_user_db(current_user)
         st.session_state.messages = []
